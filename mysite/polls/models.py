@@ -1,5 +1,6 @@
 import datetime
 
+from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.utils import timezone
 
@@ -28,3 +29,56 @@ class Choice(models.Model):
 
     def __str__(self):
         return self.choice_text
+
+
+class User(AbstractUser):
+
+    @classmethod
+    def create_user(
+            cls,
+            username,
+            email,
+            password,
+            first_name=None,
+            last_name=None
+    ):
+        if not username:
+            raise ValueError('Users must have an username.')
+
+        if not email:
+            raise ValueError('Users must have a email.')
+
+        if not password:
+            raise ValueError('Users must have a password.')
+
+        user = User(
+            username=username,
+            email=cls.normalize_username(email),
+            password=password,
+            first_name=first_name,
+            last_name=last_name
+        )
+        user.set_password(password)
+        user.save()
+        return user
+
+    @classmethod
+    def create_superuser(
+            cls, username, email, password, first_name=None, last_name=None
+    ):
+        if not username:
+            raise ValueError('Superusers must have an username.')
+
+        if not email:
+            raise ValueError('Superusers must have a email.')
+
+        if not password:
+            raise ValueError('Superusers must have a password.')
+
+        user = cls.create_user(
+            username, email, password, first_name, last_name
+        )
+        user.is_superuser = True
+        user.is_staff = True
+        user.save()
+        return user

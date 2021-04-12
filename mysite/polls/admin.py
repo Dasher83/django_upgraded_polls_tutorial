@@ -1,6 +1,7 @@
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin
+from .models import Choice, Question, User
 
-from .models import Choice, Question
 
 # Register your models here.
 
@@ -21,4 +22,5 @@ class QuestionAdmin(admin.ModelAdmin):
     search_fields = ['question_text']
 
 
+admin.site.register(User, UserAdmin)
 admin.site.register(Question, QuestionAdmin)
