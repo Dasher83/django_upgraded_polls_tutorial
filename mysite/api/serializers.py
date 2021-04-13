@@ -38,10 +38,23 @@ class UserListSerializer(serializers.ModelSerializer):
 class UserCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        exclude = ("id", "date_joined", "last_login")
+        exclude = ("date_joined", "last_login")
+
+    def create(self, validated_data):
+        user = super().create(validated_data)
+        user.set_password(user.password)
+        user.is_active = True
+        user.save()
+        return user
 
 
 class UserUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         exclude = ("id", "date_joined", "last_login")
+
+    def update(self, instance, validated_data):
+        super().update(instance, validated_data)
+        instance.set_password(instance.password)
+        instance.save()
+        return instance

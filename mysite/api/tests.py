@@ -68,6 +68,8 @@ def get_allowed_fields_of_entity(entity_name):
             "is_staff",
             "is_active",
             "date_joined",
+            "groups",
+            "user_permissions",
         },
     }
     return entities_allowed_fields_map[entity_name]
@@ -795,7 +797,6 @@ class UserIndexViewTests(TestCase):
         Obtain a single User by its id
         However, no USer has that particular id
         """
-        allowed_fields = get_allowed_fields_of_entity("User")
         user_data = {
             "username": "test",
             "email": "test@gmail.com",
@@ -804,7 +805,6 @@ class UserIndexViewTests(TestCase):
             "last_name": "Unit",
         }
         user_instance = User.create_user(**user_data)
-
         allowed_fields = get_allowed_fields_of_entity("User")
         user_representation = entity_to_dict(
             user_instance, allowed_fields, fields={"id"}
@@ -816,3 +816,367 @@ class UserIndexViewTests(TestCase):
         self.assertEqual(response.status_code, 404)
         expected_response = {"detail": "Not found."}
         self.assertEqual(expected_response, json.loads(response.content))
+
+
+class UserPostViewTests(TestCase):
+    def test_post_user_successfully(self):
+        """
+        Create a new user without errors
+        """
+        user_data = {
+            "username": "test",
+            "email": "test@gmail.com",
+            "password": "1234",
+            "first_name": "Mr. Test",
+            "last_name": "Unit",
+        }
+        user_instance = User.create_user(**user_data)
+        allowed_fields = get_allowed_fields_of_entity("User")
+        expected_data = entity_to_dict(
+            user_instance,
+            allowed_fields,
+            fields={
+                "id",
+                "password",
+                "is_superuser",
+                "username",
+                "first_name",
+                "last_name",
+                "email",
+                "is_staff",
+                "is_active",
+                "groups",
+                "user_permissions",
+            },
+        )
+        expected_data["groups"] = list(expected_data["groups"].all())
+        expected_data["user_permissions"] = list(
+            expected_data["user_permissions"].all()
+        )
+        User.objects.all().delete()
+        target_url = "/api/polls/user/"
+        response = self.client.post(target_url, data=user_data)
+        self.assertEqual(response.status_code, 201)
+        response_data = json.loads(response.content)
+        self.assertIsInstance(expected_data.pop("id"), int)
+        self.assertLess(len(user_data["password"]), len(expected_data.pop("password")))
+        self.assertIsInstance(response_data.pop("id"), int)
+        self.assertLess(len(user_data["password"]), len(response_data.pop("password")))
+        self.assertEqual(expected_data, response_data)
+
+    def test_post_user_exclude_required_fields(self):
+        """
+        Fail to create a new user because some or all required field were not included
+        """
+        base_user_data = {
+            "username": "test",
+            "email": "test@gmail.com",
+            "password": "1234",
+            "first_name": "Mr. Test",
+            "last_name": "Unit",
+        }
+        required_fields = {"username", "password"}
+        target_url = "/api/polls/user/"
+        for required_field in required_fields:
+            user_data = {
+                key: value
+                for (key, value) in base_user_data.items()
+                if key != required_field
+            }
+            response = self.client.post(target_url, data=user_data)
+            self.assertEqual(response.status_code, 400)
+            response_error = json.loads(response.content)
+            expected_error = {required_field: ["This field is required."]}
+            self.assertEqual(expected_error, response_error)
+
+        user_data = {
+            key: value
+            for (key, value) in base_user_data.items()
+            if key not in required_fields
+        }
+        response = self.client.post(target_url, data=user_data)
+        self.assertEqual(response.status_code, 400)
+        response_error = json.loads(response.content)
+        expected_error = {key: ["This field is required."] for key in required_fields}
+        self.assertEqual(expected_error, response_error)
+
+    def test_post_user_blank_fields(self):
+        """
+        Fail to create a new user because some required field is blank
+        """
+        base_user_data = {
+            "username": "test",
+            "email": "test@gmail.com",
+            "password": "1234",
+            "first_name": "Mr. Test",
+            "last_name": "Unit",
+        }
+        required_fields = {"username", "password"}
+        target_url = "/api/polls/user/"
+        for required_field in required_fields:
+            user_data = deepcopy(base_user_data)
+            user_data[required_field] = ""
+            response = self.client.post(target_url, data=user_data)
+            self.assertEqual(response.status_code, 400)
+            response_error = json.loads(response.content)
+            expected_error = {required_field: ["This field may not be blank."]}
+            self.assertEqual(expected_error, response_error)
+
+        user_data = {
+            key: "" for (key, value) in base_user_data.items() if key in required_fields
+        }
+        response = self.client.post(target_url, data=user_data)
+        self.assertEqual(response.status_code, 400)
+        response_error = json.loads(response.content)
+        expected_error = {
+            key: ["This field may not be blank."] for key in required_fields
+        }
+        self.assertEqual(expected_error, response_error)
+
+    def test_post_user_invalid_email(self):
+        """
+        Fail to create a new user because an invalid email is provided
+        """
+        user_data = {
+            "username": "test",
+            "password": "1234",
+            "first_name": "Mr. Test",
+            "last_name": "Unit",
+        }
+        invalid_emails = {1, "1", "1@", "1@gmail", "test@.com"}
+        target_url = "/api/polls/user/"
+        for invalid_email in invalid_emails:
+            user_data["email"] = invalid_email
+            response = self.client.post(target_url, data=user_data)
+            self.assertEqual(response.status_code, 400)
+            response_error = json.loads(response.content)
+            expected_error = {"email": ["Enter a valid email address."]}
+            self.assertEqual(expected_error, response_error)
+
+
+class UserPutViewTests(TestCase):
+    def test_put_user_successfully(self):
+        """
+        Update an existing user without errors
+        """
+        user_data = {
+            "username": "test",
+            "email": "test@gmail.com",
+            "password": "1234",
+            "first_name": "Mr. Test",
+            "last_name": "Unit",
+        }
+        user_instance = User.create_user(**user_data)
+        allowed_fields = get_allowed_fields_of_entity("User")
+        expected_data = entity_to_dict(
+            user_instance,
+            allowed_fields,
+            fields={
+                "id",
+                "password",
+                "is_superuser",
+                "username",
+                "first_name",
+                "last_name",
+                "email",
+                "is_staff",
+                "is_active",
+                "groups",
+                "user_permissions",
+            },
+        )
+        expected_data["groups"] = list(expected_data["groups"].all())
+        expected_data["user_permissions"] = list(
+            expected_data["user_permissions"].all()
+        )
+        new_user_data = {
+            "username": "test_1",
+            "email": "test_1@gmail.com",
+            "password": "12345",
+            "first_name": "Mr. Test 1",
+            "last_name": "Unit 2",
+        }
+        expected_data.update(new_user_data)
+        target_url = "/api/polls/user/%s/" % expected_data["id"]
+        response = self.client.put(
+            target_url, data=json.dumps(new_user_data), content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 200)
+        response_data = json.loads(response.content)
+        self.assertIsInstance(expected_data.pop("id"), int)
+        self.assertLess(len(user_data["password"]), len(expected_data.pop("password")))
+        self.assertLess(len(user_data["password"]), len(response_data.pop("password")))
+        self.assertEqual(expected_data, response_data)
+
+    def test_put_user_exclude_required_fields(self):
+        """
+        Fail to update an existing user because some or all required field were not included
+        """
+        user_data = {
+            "username": "test",
+            "email": "test@gmail.com",
+            "password": "1234",
+            "first_name": "Mr. Test",
+            "last_name": "Unit",
+        }
+        user_instance = User.create_user(**user_data)
+        base_new_user_data = {
+            "username": "test_1",
+            "email": "test_1@gmail.com",
+            "password": "12345",
+            "first_name": "Mr. Test 1",
+            "last_name": "Unit 2",
+        }
+        target_url = "/api/polls/user/%s/" % user_instance.id
+        required_fields = {"username", "password"}
+
+        for required_field in required_fields:
+            user_data = {
+                key: value
+                for (key, value) in base_new_user_data.items()
+                if key != required_field
+            }
+            response = self.client.put(
+                target_url, data=json.dumps(user_data), content_type="application/json"
+            )
+            self.assertEqual(response.status_code, 400)
+            response_error = json.loads(response.content)
+            expected_error = {required_field: ["This field is required."]}
+            self.assertEqual(expected_error, response_error)
+
+        user_data = {
+            key: value
+            for (key, value) in base_new_user_data.items()
+            if key not in required_fields
+        }
+        response = self.client.put(
+            target_url, data=json.dumps(user_data), content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 400)
+        response_error = json.loads(response.content)
+        expected_error = {key: ["This field is required."] for key in required_fields}
+        self.assertEqual(expected_error, response_error)
+
+    def test_put_user_blank_fields(self):
+        """
+        Fail to update an existing user because some required field is blank
+        """
+        user_data = {
+            "username": "test",
+            "email": "test@gmail.com",
+            "password": "1234",
+            "first_name": "Mr. Test",
+            "last_name": "Unit",
+        }
+        user_instance = User.create_user(**user_data)
+        base_new_user_data = {
+            "username": "test_1",
+            "email": "test_1@gmail.com",
+            "password": "12345",
+            "first_name": "Mr. Test 1",
+            "last_name": "Unit 2",
+        }
+        target_url = "/api/polls/user/%s/" % user_instance.id
+        required_fields = {"username", "password"}
+
+        for required_field in required_fields:
+            new_user_data = deepcopy(base_new_user_data)
+            new_user_data[required_field] = ""
+            response = self.client.put(
+                target_url,
+                data=json.dumps(new_user_data),
+                content_type="application/json",
+            )
+            self.assertEqual(response.status_code, 400)
+            response_error = json.loads(response.content)
+            expected_error = {required_field: ["This field may not be blank."]}
+            self.assertEqual(expected_error, response_error)
+
+        new_user_data = deepcopy(base_new_user_data)
+        new_user_data = {
+            key: "" for (key, value) in new_user_data.items() if key in required_fields
+        }
+        response = self.client.put(
+            target_url, data=json.dumps(new_user_data), content_type="application/json"
+        )
+        self.assertEqual(response.status_code, 400)
+        response_error = json.loads(response.content)
+        expected_error = {
+            key: ["This field may not be blank."] for key in required_fields
+        }
+        self.assertEqual(expected_error, response_error)
+
+    def test_put_user_invalid_email(self):
+        """
+        Fail to update an existing user because an invalid email is provided
+        """
+        user_data = {
+            "username": "test",
+            "email": "test@gmail.com",
+            "password": "1234",
+            "first_name": "Mr. Test",
+            "last_name": "Unit",
+        }
+        user_instance = User.create_user(**user_data)
+        new_user_data = {
+            "username": "test_1",
+            "password": "12345",
+            "first_name": "Mr. Test 1",
+            "last_name": "Unit 2",
+        }
+        invalid_emails = {1, "1", "1@", "1@gmail", "test@.com"}
+        target_url = "/api/polls/user/%s/" % user_instance.id
+        for invalid_email in invalid_emails:
+            new_user_data["email"] = invalid_email
+            response = self.client.put(
+                target_url,
+                data=json.dumps(new_user_data),
+                content_type="application/json",
+            )
+            self.assertEqual(response.status_code, 400)
+            response_error = json.loads(response.content)
+            expected_error = {"email": ["Enter a valid email address."]}
+            self.assertEqual(expected_error, response_error)
+
+
+class UserDeleteViewTests(TestCase):
+    def test_delete_user_successfully(self):
+        """
+        Delete an existing user without errors
+        """
+        user_data = {
+            "username": "test",
+            "email": "test@gmail.com",
+            "password": "1234",
+            "first_name": "Mr. Test",
+            "last_name": "Unit",
+        }
+        user_instance = User.create_user(**user_data)
+        target_url = "/api/polls/user/%s/"
+        target_url = target_url % user_instance.id
+        response = self.client.delete(target_url)
+        self.assertEqual(response.status_code, 204)
+        expected_data = b""
+        self.assertEqual(expected_data, response.content)
+
+    def test_user_question_non_existent(self):
+        """
+        Delete an existing user unsuccessfully since
+        it does not exist any Question with the requested id
+        """
+        user_data = {
+            "username": "test",
+            "email": "test@gmail.com",
+            "password": "1234",
+            "first_name": "Mr. Test",
+            "last_name": "Unit",
+        }
+        user_instance = User.create_user(**user_data)
+        target_url = "/api/polls/user/%s/"
+        non_existent_id = user_instance.id + 1
+        target_url = target_url % non_existent_id
+        response = self.client.delete(target_url)
+        self.assertEqual(response.status_code, 404)
+        response_error = json.loads(json.dumps(str(response.content)))
+        expected_error = 'b\'{"detail":"Not found."}\''
+        self.assertEqual(expected_error, response_error)
