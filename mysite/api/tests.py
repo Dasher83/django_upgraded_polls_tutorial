@@ -5,6 +5,7 @@ from random import randint
 
 from django.test import TestCase
 from django.utils import timezone
+from rest_framework.exceptions import ErrorDetail
 
 from polls.models import Question, Choice, User
 
@@ -1179,4 +1180,121 @@ class UserDeleteViewTests(TestCase):
         self.assertEqual(response.status_code, 404)
         response_error = json.loads(json.dumps(str(response.content)))
         expected_error = 'b\'{"detail":"Not found."}\''
+        self.assertEqual(expected_error, response_error)
+
+
+class LoginViewTests(TestCase):
+    def tests_login_successful(self):
+        """
+        Creates a new token without error and audits its creation
+        """
+        user_data = {
+            "username": "test",
+            "email": "test@gmail.com",
+            "password": "1234",
+            "first_name": "Mr. Test",
+            "last_name": "Unit",
+        }
+        user_instance = User.create_user(**user_data)
+        login_data = {
+            "username": user_instance.username,
+            "password": user_data["password"],
+        }
+        target_url = "/api/polls/login/"
+        response = self.client.post(target_url, data=login_data)
+        self.assertEqual(response.status_code, 200)
+        response_data = response.data
+        self.assertIsInstance(response_data["token"], str)
+        self.assertEqual(user_instance.id, response_data["user_id"])
+
+    def test_login_bad_credentials(self):
+        """
+        Fails to create a new token because no valid credentials were provided
+        """
+        login_data = {"username": "invalid_username", "password": "invalid_password"}
+        target_url = "/api/polls/login/"
+        response = self.client.post(target_url, data=login_data)
+        self.assertEqual(response.status_code, 400)
+        response_error = response.data
+        expected_error = {
+            "non_field_errors": [
+                ErrorDetail(
+                    string="Unable to log in with provided credentials.",
+                    code="authorization",
+                )
+            ]
+        }
+        self.assertEqual(expected_error, response_error)
+
+    def test_login_exclude_required_fields(self):
+        """
+        Fails to create a new token because some or
+        all required fields were not provided
+        """
+        base_login_data = {
+            "username": "invalid_username",
+            "password": "invalid_password",
+        }
+        target_url = "/api/polls/login/"
+        required_fields = set(base_login_data.keys())
+        for required_field in required_fields:
+            login_data = {
+                key: value
+                for (key, value) in base_login_data.items()
+                if key != required_field
+            }
+            response = self.client.post(target_url, data=login_data)
+            self.assertEqual(response.status_code, 400)
+            response_error = response.data
+            expected_error = {
+                required_field: [
+                    ErrorDetail(string="This field is required.", code="required")
+                ]
+            }
+            self.assertEqual(expected_error, response_error)
+
+        login_data = {}
+        response = self.client.post(target_url, data=login_data)
+        self.assertEqual(response.status_code, 400)
+        response_error = response.data
+        expected_error = {
+            key: [ErrorDetail(string="This field is required.", code="required")]
+            for key in base_login_data.keys()
+        }
+        self.assertEqual(expected_error, response_error)
+
+    def test_login_blank_required_fields(self):
+        """
+        Fails to create a new token because some or all
+        required fields were provided as empty values
+        """
+        base_login_data = {
+            "username": "invalid_username",
+            "password": "invalid_password",
+        }
+        target_url = "/api/polls/login/"
+        required_fields = set(base_login_data.keys())
+        for required_field in required_fields:
+            login_data = deepcopy(base_login_data)
+            login_data[required_field] = ""
+            response = self.client.post(target_url, data=login_data)
+            self.assertEqual(response.status_code, 400)
+            response_data = response.data
+            self.assertEqual(
+                response_data,
+                {
+                    required_field: [
+                        ErrorDetail(string="This field may not be blank.", code="blank")
+                    ]
+                },
+            )
+
+        login_data = {key: "" for (key, value) in base_login_data.items()}
+        response = self.client.post(target_url, data=login_data)
+        self.assertEqual(response.status_code, 400)
+        response_error = response.data
+        expected_error = {
+            key: [ErrorDetail(string="This field may not be blank.", code="blank")]
+            for key in base_login_data.keys()
+        }
         self.assertEqual(expected_error, response_error)
