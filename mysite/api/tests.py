@@ -10,6 +10,59 @@ from rest_framework.exceptions import ErrorDetail
 from polls.models import Question, Choice, User
 
 
+class ApiTestCase(TestCase):
+    @staticmethod
+    def create_basic_user():
+        user_data = {
+            "username": "basic_user",
+            "password": "1234",
+            "email": "",
+            "first_name": "",
+            "last_name": "",
+        }
+        User.objects.filter(username=user_data["username"]).delete()
+        User.create_user(**user_data)
+        return user_data
+
+    def login(self, username, password):
+        login_url = "/api/polls/login/"
+        login_data = {"username": username, "password": password}
+        response = self.client.post(login_url, data=login_data)
+        self.assertEqual(response.status_code, 200)
+        login_response = response.data
+        token = login_response["token"]
+        return token
+
+    def post(self, target_url, token, data, expected_response_status=200):
+        auth_headers = dict()
+        if token:
+            auth_headers["HTTP_AUTHORIZATION"] = "Token %s" % token
+        response = self.client.post(target_url, data=data, **auth_headers)
+        self.assertEqual(expected_response_status, response.status_code)
+        return response
+
+    def put(self, target_url, token, data, expected_response_status=200):
+        auth_headers = dict()
+        if token:
+            auth_headers["HTTP_AUTHORIZATION"] = "Token %s" % token
+        response = self.client.put(
+            target_url,
+            data=json.dumps(data),
+            content_type="application/json",
+            **auth_headers
+        )
+        self.assertEqual(expected_response_status, response.status_code)
+        return response
+
+    def delete(self, target_url, token, expected_response_status=200):
+        auth_headers = dict()
+        if token:
+            auth_headers["HTTP_AUTHORIZATION"] = "Token %s" % token
+        response = self.client.delete(target_url, **auth_headers)
+        self.assertEqual(expected_response_status, response.status_code)
+        return response
+
+
 def create_question(question_text, days):
     """
     Create a question with the given 'question_text' and published the given
@@ -76,73 +129,7 @@ def get_allowed_fields_of_entity(entity_name):
     return entities_allowed_fields_map[entity_name]
 
 
-class QuestionIndexViewTests(TestCase):
-    def test_get_no_question(self):
-        """
-        Obtain all questions having none
-        """
-        target_url = "/api/polls/question/"
-        response = self.client.get(target_url)
-        self.assertEqual(response.status_code, 200)
-        expected_data = []
-        self.assertEqual(expected_data, json.loads(response.content))
-
-    def test_get_all_questions_successfully(self):
-        """
-        Obtain all questions available
-        """
-        expected_data = []
-        allowed_fields = get_allowed_fields_of_entity("Question")
-        question_instance = create_question(question_text="Some question.", days=30)
-        expected_data.append(entity_to_dict(question_instance, allowed_fields))
-        question_instance = create_question(
-            question_text="Some other question.", days=31
-        )
-        expected_data.append(entity_to_dict(question_instance, allowed_fields))
-        for expected_data_item in expected_data:
-            expected_data_item["pub_date"] = expected_data_item["pub_date"].isoformat()
-
-        target_url = "/api/polls/question/"
-        response = self.client.get(target_url)
-        self.assertEqual(response.status_code, 200)
-        response_data = json.loads(response.content)
-        self.assertEqual(expected_data, response_data)
-
-    def test_get_one_question_successfully(self):
-        """
-        Obtain a single Question by its id
-        """
-        question_instance = create_question(question_text="Some question.", days=30)
-        allowed_fields = get_allowed_fields_of_entity("Question")
-        expected_data = entity_to_dict(question_instance, allowed_fields)
-        expected_data["pub_date"] = expected_data["pub_date"].isoformat()
-        target_url = "/api/polls/question/%s/"
-        target_url = target_url % expected_data["id"]
-        response = self.client.get(target_url)
-        self.assertEqual(response.status_code, 200)
-        response_data = json.loads(response.content)
-        self.assertEqual(expected_data, response_data)
-
-    def test_get_one_question_non_existent(self):
-        """
-        Obtain a single Question by its id
-        However, no Question has that particular id
-        """
-        question_instance = create_question(question_text="Some question.", days=30)
-        allowed_fields = get_allowed_fields_of_entity("Question")
-        question_model_representation = entity_to_dict(
-            question_instance, allowed_fields, fields={"id"}
-        )
-        non_existent_id = str(int(question_model_representation["id"]) + 1)
-        target_url = "/api/polls/question/%s/"
-        target_url = target_url % non_existent_id
-        response = self.client.get(target_url)
-        self.assertEqual(response.status_code, 404)
-        expected_response = {"detail": "Not found."}
-        self.assertEqual(expected_response, json.loads(response.content))
-
-
-class QuestionPostViewTests(TestCase):
+class QuestionPostViewTests(ApiTestCase):
     def test_post_question_successfully(self):
         """
         Create a new question without errors
@@ -152,8 +139,11 @@ class QuestionPostViewTests(TestCase):
             "pub_date": "2021-04-08T09:27:35-03:00",
         }
         target_url = "/api/polls/question/"
-        response = self.client.post(target_url, data=question_data)
-        self.assertEqual(response.status_code, 201)
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.post(
+            target_url, token, data=question_data, expected_response_status=201
+        )
         response_data = json.loads(response.content)
         self.assertIsInstance(response_data.pop("id"), int)
         self.assertEqual(json.loads(json.dumps(question_data)), response_data)
@@ -164,8 +154,11 @@ class QuestionPostViewTests(TestCase):
         """
         question_data = {"question_text": "some question"}
         target_url = "/api/polls/question/"
-        response = self.client.post(target_url, data=question_data)
-        self.assertEqual(response.status_code, 400)
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.post(
+            target_url, token, data=question_data, expected_response_status=400
+        )
         response_error = json.loads(response.content)
         expected_error = {"pub_date": ["This field is required."]}
         self.assertEqual(expected_error, response_error)
@@ -182,8 +175,11 @@ class QuestionPostViewTests(TestCase):
                 "pub_date": incorrect_value,
             }
             target_url = "/api/polls/question/"
-            response = self.client.post(target_url, data=question_data)
-            self.assertEqual(response.status_code, 400)
+            user = self.create_basic_user()
+            token = self.login(user["username"], user["password"])
+            response = self.post(
+                target_url, token, data=question_data, expected_response_status=400
+            )
             response_error = json.loads(response.content)
             expected_error = {
                 "pub_date": [
@@ -199,8 +195,11 @@ class QuestionPostViewTests(TestCase):
         """
         question_data = {"pub_date": "2021-04-08T09:27:35-03:00"}
         target_url = "/api/polls/question/"
-        response = self.client.post(target_url, data=question_data)
-        self.assertEqual(response.status_code, 400)
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.post(
+            target_url, token, data=question_data, expected_response_status=400
+        )
         response_error = json.loads(response.content)
         expected_error = {"question_text": ["This field is required."]}
         self.assertEqual(expected_error, response_error)
@@ -211,45 +210,50 @@ class QuestionPostViewTests(TestCase):
         """
         question_data = {"question_text": "", "pub_date": "2021-04-08T09:27:35-03:00"}
         target_url = "/api/polls/question/"
-        response = self.client.post(target_url, data=question_data)
-        self.assertEqual(response.status_code, 400)
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.post(
+            target_url, token, data=question_data, expected_response_status=400
+        )
         response_error = json.loads(response.content)
         expected_error = {"question_text": ["This field may not be blank."]}
         self.assertEqual(expected_error, response_error)
 
 
-class QuestionPutViewTests(TestCase):
+class QuestionPutViewTests(ApiTestCase):
     def test_put_question_successfully(self):
         """
         Update a new question without errors
         """
         question_instance = create_question(question_text="Some question.", days=30)
-        question_data = {
+        question_new_data = {
             "question_text": "What is your favorite series",
             "pub_date": "2021-04-08T09:27:35-03:00",
         }
         target_url = "/api/polls/question/%s/"
         target_url = target_url % question_instance.id
-        response = self.client.put(
-            target_url, data=json.dumps(question_data), content_type="application/json"
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.put(
+            target_url, token, data=question_new_data, expected_response_status=200
         )
-        self.assertEqual(response.status_code, 200)
         response_data = json.loads(response.content)
         self.assertIsInstance(response_data.pop("id"), int)
-        self.assertEqual(json.loads(json.dumps(question_data)), response_data)
+        self.assertEqual(json.loads(json.dumps(question_new_data)), response_data)
 
     def test_put_question_exclude_pub_date(self):
         """
         Fail to update a new question because pub_date is not included
         """
         question_instance = create_question(question_text="Some question.", days=30)
-        question_data = {"question_text": "some other question"}
+        question_new_data = {"question_text": "some other question"}
         target_url = "/api/polls/question/%s/"
         target_url = target_url % question_instance.id
-        response = self.client.put(
-            target_url, data=json.dumps(question_data), content_type="application/json"
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.put(
+            target_url, token, data=question_new_data, expected_response_status=400
         )
-        self.assertEqual(response.status_code, 400)
         response_error = json.loads(response.content)
         expected_error = {"pub_date": ["This field is required."]}
         self.assertEqual(expected_error, response_error)
@@ -262,18 +266,17 @@ class QuestionPutViewTests(TestCase):
         question_instance = create_question(question_text="Some question.", days=30)
         incorrect_values = ("", "incorrect_date_format", 1)
         for incorrect_value in incorrect_values:
-            question_data = {
+            question_new_data = {
                 "question_text": "What is your favorite series",
                 "pub_date": incorrect_value,
             }
             target_url = "/api/polls/question/%s/"
             target_url = target_url % question_instance.id
-            response = self.client.put(
-                target_url,
-                data=json.dumps(question_data),
-                content_type="application/json",
+            user = self.create_basic_user()
+            token = self.login(user["username"], user["password"])
+            response = self.put(
+                target_url, token, data=question_new_data, expected_response_status=400
             )
-            self.assertEqual(response.status_code, 400)
             response_error = json.loads(response.content)
             expected_error = {
                 "pub_date": [
@@ -288,13 +291,14 @@ class QuestionPutViewTests(TestCase):
         Fail to update a new question because question_text is not included
         """
         question_instance = create_question(question_text="Some question.", days=30)
-        question_data = {"pub_date": "2021-04-08T09:27:35-03:00"}
+        question_new_data = {"pub_date": "2021-04-08T09:27:35-03:00"}
         target_url = "/api/polls/question/%s/"
         target_url = target_url % question_instance.id
-        response = self.client.put(
-            target_url, data=json.dumps(question_data), content_type="application/json"
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.put(
+            target_url, token, data=question_new_data, expected_response_status=400
         )
-        self.assertEqual(response.status_code, 400)
         response_error = json.loads(response.content)
         expected_error = {"question_text": ["This field is required."]}
         self.assertEqual(expected_error, response_error)
@@ -304,19 +308,23 @@ class QuestionPutViewTests(TestCase):
         Fail to update a new question because question_text is blank
         """
         question_instance = create_question(question_text="Some question.", days=30)
-        question_data = {"question_text": "", "pub_date": "2021-04-08T09:27:35-03:00"}
+        question_new_data = {
+            "question_text": "",
+            "pub_date": "2021-04-08T09:27:35-03:00",
+        }
         target_url = "/api/polls/question/%s/"
         target_url = target_url % question_instance.id
-        response = self.client.put(
-            target_url, data=json.dumps(question_data), content_type="application/json"
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.put(
+            target_url, token, data=question_new_data, expected_response_status=400
         )
-        self.assertEqual(response.status_code, 400)
         response_error = json.loads(response.content)
         expected_error = {"question_text": ["This field may not be blank."]}
         self.assertEqual(expected_error, response_error)
 
 
-class QuestionDeleteViewTests(TestCase):
+class QuestionDeleteViewTests(ApiTestCase):
     def test_delete_question_successfully(self):
         """
         Delete an existing question without errors
@@ -324,8 +332,9 @@ class QuestionDeleteViewTests(TestCase):
         question_instance = create_question(question_text="Some question.", days=30)
         target_url = "/api/polls/question/%s/"
         target_url = target_url % question_instance.id
-        response = self.client.delete(target_url)
-        self.assertEqual(response.status_code, 204)
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.delete(target_url, token, expected_response_status=204)
         expected_data = b""
         self.assertEqual(expected_data, response.content)
 
@@ -338,89 +347,15 @@ class QuestionDeleteViewTests(TestCase):
         target_url = "/api/polls/question/%s/"
         non_existent_id = question_instance.id + 1
         target_url = target_url % non_existent_id
-        response = self.client.delete(target_url)
-        self.assertEqual(response.status_code, 404)
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.delete(target_url, token, expected_response_status=404)
         response_error = json.loads(json.dumps(str(response.content)))
         expected_error = 'b\'{"detail":"Not found."}\''
         self.assertEqual(expected_error, response_error)
 
 
-class ChoiceIndexViewTests(TestCase):
-    def test_get_no_choices(self):
-        """
-        Obtain all choices having none
-        """
-        target_url = "/api/polls/choice/"
-        response = self.client.get(target_url)
-        self.assertEqual(response.status_code, 200)
-        expected_data = []
-        self.assertEqual(expected_data, json.loads(response.content))
-
-    def test_get_all_choices_successfully(self):
-        """
-        Obtain all choices available
-        """
-        expected_data = []
-        allowed_fields = get_allowed_fields_of_entity("Choice")
-        question_instance = create_question(question_text="Some question.", days=30)
-        choice_instance = create_choice(
-            choice_text="Some choice.", votes=1, question=question_instance
-        )
-        expected_data.append(entity_to_dict(choice_instance, allowed_fields))
-        choice_instance = create_choice(
-            choice_text="Some other.", votes=1, question=question_instance
-        )
-        expected_data.append(entity_to_dict(choice_instance, allowed_fields))
-        for data in expected_data:
-            data["question"] = data["question"].id
-
-        target_url = "/api/polls/choice/"
-        response = self.client.get(target_url)
-        self.assertEqual(response.status_code, 200)
-        response_data = json.loads(response.content)
-        self.assertEqual(expected_data, response_data)
-
-    def test_get_one_choice_successfully(self):
-        """
-        Obtain a single Choice by its id
-        """
-        question_instance = create_question(question_text="Some question.", days=30)
-        choice_instance = create_choice(
-            choice_text="Some choice.", votes=1, question=question_instance
-        )
-        allowed_fields = get_allowed_fields_of_entity("Choice")
-        expected_response = entity_to_dict(choice_instance, allowed_fields)
-        expected_response["question"] = expected_response["question"].id
-        target_url = "/api/polls/choice/%s/"
-        target_url = target_url % expected_response["id"]
-        response = self.client.get(target_url)
-        self.assertEqual(response.status_code, 200)
-        response_data = json.loads(response.content)
-        self.assertEqual(expected_response, response_data)
-
-    def test_get_one_choice_non_existent(self):
-        """
-        Obtain a single Choice by its id
-        However, no Choice has that particular id
-        """
-        question_instance = create_question(question_text="Some question.", days=30)
-        choice_instance = create_choice(
-            choice_text="Some choice.", votes=1, question=question_instance
-        )
-        allowed_fields = get_allowed_fields_of_entity("Choice")
-        choice_representation = entity_to_dict(
-            choice_instance, allowed_fields, fields={"id"}
-        )
-        target_url = "/api/polls/choice/%s/"
-        non_existent_id = str(int(choice_representation["id"]) + 1)
-        target_url = target_url % non_existent_id
-        response = self.client.get(target_url)
-        self.assertEqual(response.status_code, 404)
-        expected_response = {"detail": "Not found."}
-        self.assertEqual(expected_response, json.loads(response.content))
-
-
-class ChoiceDeleteViewTests(TestCase):
+class ChoiceDeleteViewTests(ApiTestCase):
     def test_delete_choice_successfully(self):
         """
         Delete an existing choice without errors
@@ -431,8 +366,9 @@ class ChoiceDeleteViewTests(TestCase):
         )
         target_url = "/api/polls/choice/%s/"
         target_url = target_url % choice_instance.id
-        response = self.client.delete(target_url)
-        self.assertEqual(response.status_code, 204)
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.delete(target_url, token, expected_response_status=204)
         expected_data = b""
         self.assertEqual(expected_data, response.content)
 
@@ -448,14 +384,15 @@ class ChoiceDeleteViewTests(TestCase):
         target_url = "/api/polls/choice/%s/"
         non_existent_id = choice_instance.id + 1
         target_url = target_url % non_existent_id
-        response = self.client.delete(target_url)
-        self.assertEqual(response.status_code, 404)
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.delete(target_url, token, expected_response_status=404)
         response_error = json.loads(json.dumps(str(response.content)))
         expected_error = 'b\'{"detail":"Not found."}\''
         self.assertEqual(expected_error, response_error)
 
 
-class ChoicePostViewTests(TestCase):
+class ChoicePostViewTests(ApiTestCase):
     def test_post_choice_successfully(self):
         """
         Create a new choice without errors
@@ -467,8 +404,11 @@ class ChoicePostViewTests(TestCase):
             "question": question_instance.id,
         }
         target_url = "/api/polls/choice/"
-        response = self.client.post(target_url, data=choice_data)
-        self.assertEqual(response.status_code, 201)
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.post(
+            target_url, token, data=choice_data, expected_response_status=201
+        )
         response_data = json.loads(response.content)
         self.assertIsInstance(response_data.pop("id"), int)
         self.assertEqual(json.loads(json.dumps(choice_data)), response_data)
@@ -491,8 +431,11 @@ class ChoicePostViewTests(TestCase):
                 if key is not required_field
             }
             target_url = "/api/polls/choice/"
-            response = self.client.post(target_url, data=choice_data)
-            self.assertEqual(response.status_code, 400)
+            user = self.create_basic_user()
+            token = self.login(user["username"], user["password"])
+            response = self.post(
+                target_url, token, data=choice_data, expected_response_status=400
+            )
             response_error = json.loads(response.content)
             expected_error = {required_field: ["This field is required."]}
             self.assertEqual(expected_error, response_error)
@@ -504,8 +447,11 @@ class ChoicePostViewTests(TestCase):
         question_instance = create_question(question_text="Some question.", days=30)
         choice_data = {"choice_text": "", "votes": 5, "question": question_instance.id}
         target_url = "/api/polls/choice/"
-        response = self.client.post(target_url, data=choice_data)
-        self.assertEqual(response.status_code, 400)
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.post(
+            target_url, token, data=choice_data, expected_response_status=400
+        )
         response_error = json.loads(response.content)
         expected_error = {"choice_text": ["This field may not be blank."]}
         self.assertEqual(expected_error, response_error)
@@ -516,8 +462,11 @@ class ChoicePostViewTests(TestCase):
         """
         choice_data = {"choice_text": "Some choice", "votes": 5, "question": ""}
         target_url = "/api/polls/choice/"
-        response = self.client.post(target_url, data=choice_data)
-        self.assertEqual(response.status_code, 400)
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.post(
+            target_url, token, data=choice_data, expected_response_status=400
+        )
         response_error = json.loads(response.content)
         expected_error = {"question": ["This field may not be null."]}
         self.assertEqual(expected_error, response_error)
@@ -532,8 +481,11 @@ class ChoicePostViewTests(TestCase):
             "question": "some question",
         }
         target_url = "/api/polls/choice/"
-        response = self.client.post(target_url, data=choice_data)
-        self.assertEqual(response.status_code, 400)
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.post(
+            target_url, token, data=choice_data, expected_response_status=400
+        )
         response_error = json.loads(response.content)
         expected_error = {
             "question": ["Incorrect type. Expected pk value, received str."]
@@ -551,14 +503,17 @@ class ChoicePostViewTests(TestCase):
             "question": question_instance.id,
         }
         target_url = "/api/polls/choice/"
-        response = self.client.post(target_url, data=choice_data)
-        self.assertEqual(response.status_code, 400)
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.post(
+            target_url, token, data=choice_data, expected_response_status=400
+        )
         response_error = json.loads(response.content)
         expected_error = {"votes": ["A valid integer is required."]}
         self.assertEqual(expected_error, response_error)
 
 
-class ChoicePutViewTests(TestCase):
+class ChoicePutViewTests(ApiTestCase):
     def test_put_choice_successfully(self):
         """
         Update an existing choice without errors
@@ -577,12 +532,11 @@ class ChoicePutViewTests(TestCase):
         }
         target_url = "/api/polls/choice/%s/"
         target_url = target_url % choice_instance.id
-        response = self.client.put(
-            target_url,
-            data=json.dumps(choice_new_data),
-            content_type="application/json",
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.put(
+            target_url, token, data=choice_new_data, expected_response_status=200
         )
-        self.assertEqual(response.status_code, 200)
         response_data = json.loads(response.content)
         self.assertIsInstance(response_data.pop("id"), int)
         self.assertEqual(json.loads(json.dumps(choice_new_data)), response_data)
@@ -613,12 +567,11 @@ class ChoicePutViewTests(TestCase):
                 for (key, value) in choice_original_data.items()
                 if key is not required_field
             }
-            response = self.client.put(
-                target_url,
-                data=json.dumps(choice_new_data),
-                content_type="application/json",
+            user = self.create_basic_user()
+            token = self.login(user["username"], user["password"])
+            response = self.put(
+                target_url, token, data=choice_new_data, expected_response_status=400
             )
-            self.assertEqual(response.status_code, 400)
             response_error = json.loads(response.content)
             expected_error = {required_field: ["This field is required."]}
             self.assertEqual(expected_error, response_error)
@@ -638,12 +591,11 @@ class ChoicePutViewTests(TestCase):
         }
         target_url = "/api/polls/choice/%s/"
         target_url = target_url % choice_instance.id
-        response = self.client.put(
-            target_url,
-            data=json.dumps(choice_new_data),
-            content_type="application/json",
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.put(
+            target_url, token, data=choice_new_data, expected_response_status=400
         )
-        self.assertEqual(response.status_code, 400)
         response_error = json.loads(response.content)
         expected_error = {"choice_text": ["This field may not be blank."]}
         self.assertEqual(expected_error, response_error)
@@ -659,12 +611,11 @@ class ChoicePutViewTests(TestCase):
         choice_new_data = {"choice_text": "Some choice", "votes": 5, "question": ""}
         target_url = "/api/polls/choice/%s/"
         target_url = target_url % choice_instance.id
-        response = self.client.put(
-            target_url,
-            data=json.dumps(choice_new_data),
-            content_type="application/json",
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.put(
+            target_url, token, data=choice_new_data, expected_response_status=400
         )
-        self.assertEqual(response.status_code, 400)
         response_error = json.loads(response.content)
         expected_error = {"question": ["This field may not be null."]}
         self.assertEqual(expected_error, response_error)
@@ -684,12 +635,11 @@ class ChoicePutViewTests(TestCase):
         }
         target_url = "/api/polls/choice/%s/"
         target_url = target_url % choice_instance.id
-        response = self.client.put(
-            target_url,
-            data=json.dumps(choice_new_data),
-            content_type="application/json",
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.put(
+            target_url, token, data=choice_new_data, expected_response_status=400
         )
-        self.assertEqual(response.status_code, 400)
         response_error = json.loads(response.content)
         expected_error = {
             "question": ["Incorrect type. Expected pk value, received str."]
@@ -711,115 +661,17 @@ class ChoicePutViewTests(TestCase):
         }
         target_url = "/api/polls/choice/%s/"
         target_url = target_url % choice_instance.id
-        response = self.client.put(
-            target_url,
-            data=json.dumps(choice_new_data),
-            content_type="application/json",
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.put(
+            target_url, token, data=choice_new_data, expected_response_status=400
         )
-        self.assertEqual(response.status_code, 400)
         response_error = json.loads(response.content)
         expected_error = {"votes": ["A valid integer is required."]}
         self.assertEqual(expected_error, response_error)
 
 
-class UserIndexViewTests(TestCase):
-    def test_get_no_user(self):
-        """
-        Obtain all users having none
-        """
-        target_url = "/api/polls/user/"
-        response = self.client.get(target_url)
-        self.assertEqual(response.status_code, 200)
-        expected_data = []
-        self.assertEqual(expected_data, json.loads(response.content))
-
-    def test_get_all_user_successfully(self):
-        """
-        Obtain all users available
-        """
-        allowed_fields = get_allowed_fields_of_entity("User")
-        expected_data = []
-        base_user_data = {
-            "username": "test_%s",
-            "email": "test_%s@gmail.com",
-            "password": "1234%s",
-            "first_name": "Mr. Test %s",
-            "last_name": "Unit %s",
-        }
-        fields = ("id", "username", "first_name", "last_name", "email")
-        random_users_amount = randint(1, 100)
-        for index in range(random_users_amount):
-            user_data = {key: value % index for (key, value) in base_user_data.items()}
-            user_instance = User.create_user(**user_data)
-            user_representation = entity_to_dict(
-                user_instance, allowed_fields, fields=fields
-            )
-            expected_data.append(user_representation)
-
-        target_url = "/api/polls/user/"
-        response = self.client.get(target_url)
-        self.assertEqual(response.status_code, 200)
-        response_data = json.loads(response.content)
-        self.assertEqual(expected_data, response_data)
-
-    def test_get_one_user_successfully(self):
-        """
-        Obtain a single user by its id
-        """
-        allowed_fields = get_allowed_fields_of_entity("User")
-        user_data = {
-            "username": "test",
-            "email": "test@gmail.com",
-            "password": "1234",
-            "first_name": "Mr. Test",
-            "last_name": "Unit",
-        }
-        fields = (
-            "id",
-            "is_superuser",
-            "username",
-            "first_name",
-            "last_name",
-            "email",
-            "is_staff",
-            "is_active",
-        )
-        user_instance = User.create_user(**user_data)
-        expected_data = entity_to_dict(user_instance, allowed_fields, fields=fields)
-        target_url = "/api/polls/user/%s/"
-        target_url = target_url % expected_data["id"]
-        response = self.client.get(target_url)
-        self.assertEqual(response.status_code, 200)
-        response_data = json.loads(response.content)
-        self.assertEqual(expected_data, response_data)
-
-    def test_get_one_user_non_existent(self):
-        """
-        Obtain a single User by its id
-        However, no USer has that particular id
-        """
-        user_data = {
-            "username": "test",
-            "email": "test@gmail.com",
-            "password": "1234",
-            "first_name": "Mr. Test",
-            "last_name": "Unit",
-        }
-        user_instance = User.create_user(**user_data)
-        allowed_fields = get_allowed_fields_of_entity("User")
-        user_representation = entity_to_dict(
-            user_instance, allowed_fields, fields={"id"}
-        )
-        target_url = "/api/polls/user/%s/"
-        non_existent_id = str(int(user_representation["id"]) + 1)
-        target_url = target_url % non_existent_id
-        response = self.client.get(target_url)
-        self.assertEqual(response.status_code, 404)
-        expected_response = {"detail": "Not found."}
-        self.assertEqual(expected_response, json.loads(response.content))
-
-
-class UserPostViewTests(TestCase):
+class UserPostViewTests(ApiTestCase):
     def test_post_user_successfully(self):
         """
         Create a new user without errors
@@ -856,8 +708,11 @@ class UserPostViewTests(TestCase):
         )
         User.objects.all().delete()
         target_url = "/api/polls/user/"
-        response = self.client.post(target_url, data=user_data)
-        self.assertEqual(response.status_code, 201)
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.post(
+            target_url, token, data=user_data, expected_response_status=201
+        )
         response_data = json.loads(response.content)
         self.assertIsInstance(expected_data.pop("id"), int)
         self.assertLess(len(user_data["password"]), len(expected_data.pop("password")))
@@ -884,8 +739,11 @@ class UserPostViewTests(TestCase):
                 for (key, value) in base_user_data.items()
                 if key != required_field
             }
-            response = self.client.post(target_url, data=user_data)
-            self.assertEqual(response.status_code, 400)
+            user = self.create_basic_user()
+            token = self.login(user["username"], user["password"])
+            response = self.post(
+                target_url, token, data=user_data, expected_response_status=400
+            )
             response_error = json.loads(response.content)
             expected_error = {required_field: ["This field is required."]}
             self.assertEqual(expected_error, response_error)
@@ -895,8 +753,11 @@ class UserPostViewTests(TestCase):
             for (key, value) in base_user_data.items()
             if key not in required_fields
         }
-        response = self.client.post(target_url, data=user_data)
-        self.assertEqual(response.status_code, 400)
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.post(
+            target_url, token, data=user_data, expected_response_status=400
+        )
         response_error = json.loads(response.content)
         expected_error = {key: ["This field is required."] for key in required_fields}
         self.assertEqual(expected_error, response_error)
@@ -917,8 +778,11 @@ class UserPostViewTests(TestCase):
         for required_field in required_fields:
             user_data = deepcopy(base_user_data)
             user_data[required_field] = ""
-            response = self.client.post(target_url, data=user_data)
-            self.assertEqual(response.status_code, 400)
+            user = self.create_basic_user()
+            token = self.login(user["username"], user["password"])
+            response = self.post(
+                target_url, token, data=user_data, expected_response_status=400
+            )
             response_error = json.loads(response.content)
             expected_error = {required_field: ["This field may not be blank."]}
             self.assertEqual(expected_error, response_error)
@@ -926,8 +790,11 @@ class UserPostViewTests(TestCase):
         user_data = {
             key: "" for (key, value) in base_user_data.items() if key in required_fields
         }
-        response = self.client.post(target_url, data=user_data)
-        self.assertEqual(response.status_code, 400)
+        user = self.create_basic_user()
+        token = self.login(user["username"], user["password"])
+        response = self.post(
+            target_url, token, data=user_data, expected_response_status=400
+        )
         response_error = json.loads(response.content)
         expected_error = {
             key: ["This field may not be blank."] for key in required_fields
@@ -948,14 +815,17 @@ class UserPostViewTests(TestCase):
         target_url = "/api/polls/user/"
         for invalid_email in invalid_emails:
             user_data["email"] = invalid_email
-            response = self.client.post(target_url, data=user_data)
-            self.assertEqual(response.status_code, 400)
+            user = self.create_basic_user()
+            token = self.login(user["username"], user["password"])
+            response = self.post(
+                target_url, token, data=user_data, expected_response_status=400
+            )
             response_error = json.loads(response.content)
             expected_error = {"email": ["Enter a valid email address."]}
             self.assertEqual(expected_error, response_error)
 
 
-class UserPutViewTests(TestCase):
+class UserPutViewTests(ApiTestCase):
     def test_put_user_successfully(self):
         """
         Update an existing user without errors
@@ -999,10 +869,10 @@ class UserPutViewTests(TestCase):
         }
         expected_data.update(new_user_data)
         target_url = "/api/polls/user/%s/" % expected_data["id"]
-        response = self.client.put(
-            target_url, data=json.dumps(new_user_data), content_type="application/json"
+        token = self.login(user_instance.username, user_data["password"])
+        response = self.put(
+            target_url, token, data=new_user_data, expected_response_status=200
         )
-        self.assertEqual(response.status_code, 200)
         response_data = json.loads(response.content)
         self.assertIsInstance(expected_data.pop("id"), int)
         self.assertLess(len(user_data["password"]), len(expected_data.pop("password")))
@@ -1032,28 +902,28 @@ class UserPutViewTests(TestCase):
         required_fields = {"username", "password"}
 
         for required_field in required_fields:
-            user_data = {
+            new_user_data = {
                 key: value
                 for (key, value) in base_new_user_data.items()
                 if key != required_field
             }
-            response = self.client.put(
-                target_url, data=json.dumps(user_data), content_type="application/json"
+            token = self.login(user_instance.username, user_data["password"])
+            response = self.put(
+                target_url, token, data=new_user_data, expected_response_status=400
             )
-            self.assertEqual(response.status_code, 400)
             response_error = json.loads(response.content)
             expected_error = {required_field: ["This field is required."]}
             self.assertEqual(expected_error, response_error)
 
-        user_data = {
+        new_user_data = {
             key: value
             for (key, value) in base_new_user_data.items()
             if key not in required_fields
         }
-        response = self.client.put(
-            target_url, data=json.dumps(user_data), content_type="application/json"
+        token = self.login(user_instance.username, user_data["password"])
+        response = self.put(
+            target_url, token, data=new_user_data, expected_response_status=400
         )
-        self.assertEqual(response.status_code, 400)
         response_error = json.loads(response.content)
         expected_error = {key: ["This field is required."] for key in required_fields}
         self.assertEqual(expected_error, response_error)
@@ -1083,12 +953,10 @@ class UserPutViewTests(TestCase):
         for required_field in required_fields:
             new_user_data = deepcopy(base_new_user_data)
             new_user_data[required_field] = ""
-            response = self.client.put(
-                target_url,
-                data=json.dumps(new_user_data),
-                content_type="application/json",
+            token = self.login(user_instance.username, user_data["password"])
+            response = self.put(
+                target_url, token, data=new_user_data, expected_response_status=400
             )
-            self.assertEqual(response.status_code, 400)
             response_error = json.loads(response.content)
             expected_error = {required_field: ["This field may not be blank."]}
             self.assertEqual(expected_error, response_error)
@@ -1097,10 +965,10 @@ class UserPutViewTests(TestCase):
         new_user_data = {
             key: "" for (key, value) in new_user_data.items() if key in required_fields
         }
-        response = self.client.put(
-            target_url, data=json.dumps(new_user_data), content_type="application/json"
+        token = self.login(user_instance, user_data["password"])
+        response = self.put(
+            target_url, token, data=new_user_data, expected_response_status=400
         )
-        self.assertEqual(response.status_code, 400)
         response_error = json.loads(response.content)
         expected_error = {
             key: ["This field may not be blank."] for key in required_fields
@@ -1129,18 +997,16 @@ class UserPutViewTests(TestCase):
         target_url = "/api/polls/user/%s/" % user_instance.id
         for invalid_email in invalid_emails:
             new_user_data["email"] = invalid_email
-            response = self.client.put(
-                target_url,
-                data=json.dumps(new_user_data),
-                content_type="application/json",
+            token = self.login(user_instance.username, user_data["password"])
+            response = self.put(
+                target_url, token, data=new_user_data, expected_response_status=400
             )
-            self.assertEqual(response.status_code, 400)
             response_error = json.loads(response.content)
             expected_error = {"email": ["Enter a valid email address."]}
             self.assertEqual(expected_error, response_error)
 
 
-class UserDeleteViewTests(TestCase):
+class UserDeleteViewTests(ApiTestCase):
     def test_delete_user_successfully(self):
         """
         Delete an existing user without errors
@@ -1155,12 +1021,12 @@ class UserDeleteViewTests(TestCase):
         user_instance = User.create_user(**user_data)
         target_url = "/api/polls/user/%s/"
         target_url = target_url % user_instance.id
-        response = self.client.delete(target_url)
-        self.assertEqual(response.status_code, 204)
+        token = self.login(user_instance.username, user_data["password"])
+        response = self.delete(target_url, token, expected_response_status=204)
         expected_data = b""
         self.assertEqual(expected_data, response.content)
 
-    def test_user_question_non_existent(self):
+    def test_delete_user_non_existent(self):
         """
         Delete an existing user unsuccessfully since
         it does not exist any Question with the requested id
@@ -1176,8 +1042,8 @@ class UserDeleteViewTests(TestCase):
         target_url = "/api/polls/user/%s/"
         non_existent_id = user_instance.id + 1
         target_url = target_url % non_existent_id
-        response = self.client.delete(target_url)
-        self.assertEqual(response.status_code, 404)
+        token = self.login(user_instance.username, user_data["password"])
+        response = self.delete(target_url, token, expected_response_status=404)
         response_error = json.loads(json.dumps(str(response.content)))
         expected_error = 'b\'{"detail":"Not found."}\''
         self.assertEqual(expected_error, response_error)

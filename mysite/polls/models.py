@@ -34,12 +34,11 @@ class Choice(models.Model):
 
 class User(AbstractUser):
     @classmethod
-    def create_user(cls, username, email, password, first_name=None, last_name=None):
+    def create_user(
+        cls, username, password, email=None, first_name=None, last_name=None
+    ):
         if not username:
             raise ValueError("Users must have an username.")
-
-        if not email:
-            raise ValueError("Users must have a email.")
 
         if not password:
             raise ValueError("Users must have a password.")
@@ -57,13 +56,10 @@ class User(AbstractUser):
 
     @classmethod
     def create_superuser(
-        cls, username, email, password, first_name=None, last_name=None
+        cls, username, password, email=None, first_name=None, last_name=None
     ):
         if not username:
             raise ValueError("Superusers must have an username.")
-
-        if not email:
-            raise ValueError("Superusers must have a email.")
 
         if not password:
             raise ValueError("Superusers must have a password.")

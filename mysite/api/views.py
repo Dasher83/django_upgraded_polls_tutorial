@@ -9,7 +9,6 @@ from .serializers import (
     QuestionSerializer,
     ChoiceSerializer,
     UserRetrieveSerializer,
-    UserListSerializer,
     UserCreateSerializer,
     UserUpdateSerializer,
 )
@@ -18,21 +17,23 @@ from .serializers import (
 class QuestionViewSet(viewsets.ModelViewSet):
     serializer_class = QuestionSerializer
     queryset = Question.objects.all()
+    http_method_names = ["post", "put", "delete"]
 
 
 class ChoiceViewSet(viewsets.ModelViewSet):
     serializer_class = ChoiceSerializer
     queryset = Choice.objects.all()
+    http_method_names = ["post", "put", "delete"]
 
 
 class UserViewSet(viewsets.ModelViewSet):
     serializer_class = UserRetrieveSerializer
     queryset = User.objects.all()
     serializer_action_classes = {
-        "list": UserListSerializer,
         "create": UserCreateSerializer,
         "update": UserUpdateSerializer,
     }
+    http_method_names = ["post", "put", "delete"]
 
     def get_serializer_class(self):
         try:
