@@ -17,9 +17,13 @@ class QuestionAdmin(admin.ModelAdmin):
         ("Date information", {"fields": ["pub_date"], "classes": ["collapse"]}),
     ]
     inlines = [ChoiceInLine]
-    list_display = ("question_text", "pub_date", "was_published_recently")
+    list_display = ("question_text", "pub_date", "was_published_recently", "created_by")
     list_filter = ["pub_date"]
     search_fields = ["question_text"]
+
+    def save_model(self, request, obj, form, change):
+        obj.created_by = request.user
+        obj.save()
 
 
 admin.site.register(User, UserAdmin)
