@@ -29,12 +29,6 @@ class UserRetrieveSerializer(serializers.ModelSerializer):
         )
 
 
-class UserListSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ("id", "username", "email", "first_name", "last_name")
-
-
 class UserCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
