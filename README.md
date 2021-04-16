@@ -9,3 +9,5 @@ This project uses pipenv for package management.
     - Patch endpoints for CRUDs
     - Permission per Model restrictions
     - Endpoints for Admins only
+    - Fix admin page to work with Answer model
+  

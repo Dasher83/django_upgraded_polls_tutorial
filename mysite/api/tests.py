@@ -155,6 +155,17 @@ class QuestionPostViewTests(ApiTestCase):
         self.assertIsInstance(response_data.pop("id"), int)
         self.assertEqual(json.loads(json.dumps(question_data)), response_data)
 
+    def test_post_question_auth_errors(self):
+        target_url = "/api/polls/question/"
+        response = self.post(target_url, None, data={}, expected_response_status=401)
+        expected_login_error = {
+            "detail": ErrorDetail(
+                string="Authentication credentials were not provided.",
+                code="not_authenticated",
+            )
+        }
+        self.assertEqual(expected_login_error, response.data)
+
     def test_post_question_bad_format_pub_date(self):
         """
         Fail to create a new question because
@@ -287,6 +298,17 @@ class QuestionPutViewTests(ApiTestCase):
         response_data = json.loads(response.content)
         self.assertIsInstance(response_data.pop("id"), int)
         self.assertEqual(json.loads(json.dumps(question_new_data)), response_data)
+
+    def test_put_question_auth_errors(self):
+        target_url = "/api/polls/question/0/"
+        response = self.put(target_url, None, data={}, expected_response_status=401)
+        expected_login_error = {
+            "detail": ErrorDetail(
+                string="Authentication credentials were not provided.",
+                code="not_authenticated",
+            )
+        }
+        self.assertEqual(expected_login_error, response.data)
 
     def test_put_question_bad_format_pub_date(self):
         """
@@ -434,6 +456,17 @@ class QuestionVoteViewTests(ApiTestCase):
         token = self.login(user.username, user_password)
         self.post(target_url, token, data=vote_data, expected_response_status=201)
 
+    def test_vote_auth_errors(self):
+        target_url = "/api/polls/question/0/vote/"
+        response = self.post(target_url, None, data={}, expected_response_status=401)
+        expected_login_error = {
+            "detail": ErrorDetail(
+                string="Authentication credentials were not provided.",
+                code="not_authenticated",
+            )
+        }
+        self.assertEqual(expected_login_error, response.data)
+
     def test_vote_nonexistent_question(self):
         """
         Submit an answer using an existing choice for a question that does not exist
@@ -574,6 +607,17 @@ class QuestionDeleteViewTests(ApiTestCase):
         expected_data = b""
         self.assertEqual(expected_data, response.content)
 
+    def test_delete_question_auth_errors(self):
+        target_url = "/api/polls/question/0/"
+        response = self.delete(target_url, None, expected_response_status=401)
+        expected_login_error = {
+            "detail": ErrorDetail(
+                string="Authentication credentials were not provided.",
+                code="not_authenticated",
+            )
+        }
+        self.assertEqual(expected_login_error, response.data)
+
     def test_delete_question_non_existent(self):
         """
         Delete an existing question unsuccessfully since
@@ -667,6 +711,17 @@ class QuestionAnswersViewTests(ApiTestCase):
         response_data = response.data
         self.assertEqual(expected_data, response_data)
 
+    def test_get_question_answers_auth_errors(self):
+        target_url = "/api/polls/question/0/results/"
+        response = self.get(target_url, None, expected_response_status=401)
+        expected_login_error = {
+            "detail": ErrorDetail(
+                string="Authentication credentials were not provided.",
+                code="not_authenticated",
+            )
+        }
+        self.assertEqual(expected_login_error, response.data)
+
     def tests_get_question_answers_no_answers(self):
         """
         Get Answers for a question nobody answer
@@ -747,6 +802,17 @@ class ChoiceDeleteViewTests(ApiTestCase):
         expected_data = b""
         self.assertEqual(expected_data, response.content)
 
+    def test_delete_choice_auth_errors(self):
+        target_url = "/api/polls/choice/0/"
+        response = self.delete(target_url, None, expected_response_status=401)
+        expected_login_error = {
+            "detail": ErrorDetail(
+                string="Authentication credentials were not provided.",
+                code="not_authenticated",
+            )
+        }
+        self.assertEqual(expected_login_error, response.data)
+
     def test_delete_choice_non_existent(self):
         """
         Delete an existing choice unsuccessfully since
@@ -794,6 +860,17 @@ class ChoicePostViewTests(ApiTestCase):
         response_data = json.loads(response.content)
         self.assertIsInstance(response_data.pop("id"), int)
         self.assertEqual(json.loads(json.dumps(choice_data)), response_data)
+
+    def test_post_choice_auth_errors(self):
+        target_url = "/api/polls/choice/"
+        response = self.post(target_url, None, data={}, expected_response_status=401)
+        expected_login_error = {
+            "detail": ErrorDetail(
+                string="Authentication credentials were not provided.",
+                code="not_authenticated",
+            )
+        }
+        self.assertEqual(expected_login_error, response.data)
 
     def test_post_choice_exclude_required_fields(self):
         """
@@ -911,6 +988,17 @@ class ChoicePutViewTests(ApiTestCase):
         response_data = json.loads(response.content)
         self.assertIsInstance(response_data.pop("id"), int)
         self.assertEqual(json.loads(json.dumps(choice_new_data)), response_data)
+
+    def test_put_choice_auth_errors(self):
+        target_url = "/api/polls/choice/0/"
+        response = self.put(target_url, None, data={}, expected_response_status=401)
+        expected_login_error = {
+            "detail": ErrorDetail(
+                string="Authentication credentials were not provided.",
+                code="not_authenticated",
+            )
+        }
+        self.assertEqual(expected_login_error, response.data)
 
     def test_put_choice_exclude_required_fields(self):
         """
@@ -1080,6 +1168,17 @@ class UserPostViewTests(ApiTestCase):
         self.assertLess(len(user_data["password"]), len(response_data.pop("password")))
         self.assertEqual(expected_data, response_data)
 
+    def test_post_user_auth_errors(self):
+        target_url = "/api/polls/user/"
+        response = self.post(target_url, None, data={}, expected_response_status=401)
+        expected_login_error = {
+            "detail": ErrorDetail(
+                string="Authentication credentials were not provided.",
+                code="not_authenticated",
+            )
+        }
+        self.assertEqual(expected_login_error, response.data)
+
     def test_post_user_exclude_required_fields(self):
         """
         Fail to create a new user because some or all required field were not included
@@ -1239,6 +1338,17 @@ class UserPutViewTests(ApiTestCase):
         self.assertLess(len(user_data["password"]), len(response_data.pop("password")))
         self.assertEqual(expected_data, response_data)
 
+    def test_put_user_auth_errors(self):
+        target_url = "/api/polls/user/0/"
+        response = self.put(target_url, None, data={}, expected_response_status=401)
+        expected_login_error = {
+            "detail": ErrorDetail(
+                string="Authentication credentials were not provided.",
+                code="not_authenticated",
+            )
+        }
+        self.assertEqual(expected_login_error, response.data)
+
     def test_put_user_exclude_required_fields(self):
         """
         Fail to update an existing user because some or all required field were not included
@@ -1385,6 +1495,17 @@ class UserDeleteViewTests(ApiTestCase):
         response = self.delete(target_url, token, expected_response_status=204)
         expected_data = b""
         self.assertEqual(expected_data, response.content)
+
+    def test_delete_user_auth_errors(self):
+        target_url = "/api/polls/user/0/"
+        response = self.delete(target_url, None, expected_response_status=401)
+        expected_login_error = {
+            "detail": ErrorDetail(
+                string="Authentication credentials were not provided.",
+                code="not_authenticated",
+            )
+        }
+        self.assertEqual(expected_login_error, response.data)
 
     def test_delete_user_non_existent(self):
         """
