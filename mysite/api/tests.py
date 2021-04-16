@@ -7,8 +7,9 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.exceptions import ErrorDetail
 
+from mysite import settings
 from mysite.testing_utils import create_basic_user
-from polls.models import Question, Choice, User
+from polls.models import Question, Choice, User, Answer
 
 
 class ApiTestCase(TestCase):
@@ -50,6 +51,15 @@ class ApiTestCase(TestCase):
         self.assertEqual(expected_response_status, response.status_code)
         return response
 
+    def get(self, target_url, token, expected_response_status=200):
+        # Todo: Add query params management as soon as they are needed in a test
+        auth_headers = dict()
+        if token:
+            auth_headers["HTTP_AUTHORIZATION"] = "Token %s" % token
+        response = self.client.get(target_url, **auth_headers)
+        self.assertEqual(expected_response_status, response.status_code)
+        return response
+
 
 def create_question(question_text, days, created_by):
     """
@@ -68,6 +78,13 @@ def create_choice(choice_text, question):
     Create a choice with the given 'choice_text' related to the given 'question', created_by a certian user
     """
     return Choice.objects.create(choice_text=choice_text, question=question)
+
+
+def create_answer(question, choice, user):
+    """
+    Create an answer for the question with the choice given by the respondent user
+    """
+    return Answer.objects.create(question=question, choice=choice, user=user)
 
 
 def entity_to_dict(entity_instance, allowed_fields, fields=None):
@@ -394,6 +411,151 @@ class QuestionPutViewTests(ApiTestCase):
         self.assertEqual(expected_error, response_error)
 
 
+class QuestionVoteViewTests(ApiTestCase):
+    def test_vote_successfully(self):
+        """
+        Submit an answer using an existing choice for a given question successfully
+        """
+        user, user_password = create_basic_user(
+            return_json=False, return_plain_password=True
+        )
+        question_instance = create_question(
+            question_text="Do you want to know what is the Matrix?",
+            days=30,
+            created_by=user,
+        )
+        target_url = "/api/polls/question/%s/vote/"
+        target_url = target_url % question_instance.id
+        selected_choice_instance = create_choice(
+            choice_text="Red pill", question=question_instance
+        )
+        create_choice(choice_text="Blue pill", question=question_instance)
+        vote_data = {"choice": selected_choice_instance.id}
+        token = self.login(user.username, user_password)
+        self.post(target_url, token, data=vote_data, expected_response_status=201)
+
+    def test_vote_nonexistent_question(self):
+        """
+        Submit an answer using an existing choice for a question that does not exist
+        """
+        user, user_password = create_basic_user(
+            return_json=False, return_plain_password=True
+        )
+        question_instance = create_question(
+            question_text="Do you want to know what is the Matrix?",
+            days=30,
+            created_by=user,
+        )
+        target_url = "/api/polls/question/%s/vote/"
+        nonexistent_id = question_instance.id + 1
+        target_url = target_url % nonexistent_id
+        token = self.login(user.username, user_password)
+        response = self.post(target_url, token, data={}, expected_response_status=404)
+        expected_error = {"detail": ErrorDetail(string="Not found.", code="not_found")}
+        response_error = response.data
+        self.assertEqual(expected_error, response_error)
+
+    def test_vote_nonexistent_choice(self):
+        """
+        Submit an answer for a question using a choice that does not exist
+        """
+        user, user_password = create_basic_user(
+            return_json=False, return_plain_password=True
+        )
+        question_instance = create_question(
+            question_text="Do you want to know what is the Matrix?",
+            days=30,
+            created_by=user,
+        )
+        target_url = "/api/polls/question/%s/vote/"
+        selected_choice_instance = create_choice(
+            choice_text="Red pill", question=question_instance
+        )
+        nonexistent_choice_id = selected_choice_instance.id + 1
+        target_url = target_url % question_instance.id
+        token = self.login(user.username, user_password)
+        vote_data = {"choice": nonexistent_choice_id}
+        response = self.post(
+            target_url, token, data=vote_data, expected_response_status=400
+        )
+        expected_error = {
+            "choice": [
+                ErrorDetail(
+                    string='Invalid pk "%s" - object does not exist.'
+                    % nonexistent_choice_id,
+                    code="does_not_exist",
+                )
+            ]
+        }
+        response_error = response.data
+        self.assertEqual(expected_error, response_error)
+
+    def test_vote_not_numeric_choice_id(self):
+        """
+        Submit an answer for a question using a choice id that is not a number
+        """
+        user, user_password = create_basic_user(
+            return_json=False, return_plain_password=True
+        )
+        question_instance = create_question(
+            question_text="Do you want to know what is the Matrix?",
+            days=30,
+            created_by=user,
+        )
+        target_url = "/api/polls/question/%s/vote/"
+        non_numeric_choice_id = "x"
+        target_url = target_url % question_instance.id
+        token = self.login(user.username, user_password)
+        vote_data = {"choice": non_numeric_choice_id}
+        response = self.post(
+            target_url, token, data=vote_data, expected_response_status=400
+        )
+        expected_error = {
+            "choice": [
+                ErrorDetail(
+                    string="Incorrect type. Expected pk value, received str.",
+                    code="incorrect_type",
+                )
+            ]
+        }
+        response_error = response.data
+        self.assertEqual(expected_error, response_error)
+
+    def test_vote_already_answered_question(self):
+        """
+        Submit an answer for a question that the requester already answered
+        """
+        user, user_password = create_basic_user(
+            return_json=False, return_plain_password=True
+        )
+        question_instance = create_question(
+            question_text="Do you want to know what is the Matrix?",
+            days=30,
+            created_by=user,
+        )
+        target_url = "/api/polls/question/%s/vote/"
+        target_url = target_url % question_instance.id
+        selected_choice_instance = create_choice(
+            choice_text="Red pill", question=question_instance
+        )
+        create_choice(choice_text="Blue pill", question=question_instance)
+        vote_data = {"choice": selected_choice_instance.id}
+        token = self.login(user.username, user_password)
+        create_answer(
+            question=question_instance, choice=selected_choice_instance, user=user
+        )
+        response = self.post(
+            target_url, token, data=vote_data, expected_response_status=409
+        )
+        expected_error = {
+            "non_field_errors": [
+                "The fields question, choice, user must make a unique set."
+            ]
+        }
+        response_error = response.data
+        self.assertEqual(expected_error, response_error)
+
+
 class QuestionDeleteViewTests(ApiTestCase):
     def test_delete_question_successfully(self):
         """
@@ -430,6 +592,139 @@ class QuestionDeleteViewTests(ApiTestCase):
         response = self.delete(target_url, token, expected_response_status=404)
         response_error = json.loads(json.dumps(str(response.content)))
         expected_error = 'b\'{"detail":"Not found."}\''
+        self.assertEqual(expected_error, response_error)
+
+
+def create_test_data(question):
+    """
+    Creates some test answers for the given question
+    :return: the expected data correspondent to the test data created
+    """
+    # Todo: should automate this with Faker like suggested by reviewers
+    red_pill_choice_instance = create_choice(choice_text="Red pill", question=question)
+    blue_pill_choice_instance = create_choice(
+        choice_text="Blue pill", question=question
+    )
+    expected_data = []
+    base_user_data = {
+        "username": "test_%s",
+        "password": "1234",
+        "email": "test_%s@matrix.com",
+        "first_name": "Test %s",
+        "last_name": "Anderson",
+    }
+    data_volume = settings.REST_FRAMEWORK["PAGE_SIZE"]
+    data_volume = data_volume + randint(1, settings.REST_FRAMEWORK["PAGE_SIZE"])
+    for index in range(0, data_volume + 1):
+        user_data = deepcopy(base_user_data)
+        user_data.update(
+            {
+                "username": "test_%s" % index,
+                "email": "test_%s@matrix.com" % index,
+                "first_name": "Test %s" % index,
+            }
+        )
+        user_instance = User.create_user(**user_data)
+        choice = (
+            red_pill_choice_instance
+            if randint(1, 2) == 1
+            else blue_pill_choice_instance
+        )
+        create_answer(question=question, user=user_instance, choice=choice)
+        expected_data_item = {
+            "user": {"id": user_instance.id, "username": user_instance.username},
+            "choice": {"id": choice.id, "choice_text": choice.choice_text},
+        }
+        expected_data.append(expected_data_item)
+
+    return expected_data
+
+
+class QuestionAnswersViewTests(ApiTestCase):
+    def test_get_question_answers_successfully(self):
+        """
+        Get Answers successfully for a question a certain user created
+        """
+        enquirer_plain_password = "1234"
+        enquirer_user_data = {
+            "username": "morpheus",
+            "password": enquirer_plain_password,
+            "email": "morpheus@matrix.com",
+            "first_name": "Morpheus",
+            "last_name": "Unknown",
+        }
+        enquirer_user = User.create_user(**enquirer_user_data)
+        question_instance = create_question(
+            question_text="Do you want to know what is the Matrix?",
+            days=30,
+            created_by=enquirer_user,
+        )
+        expected_data = create_test_data(question_instance)
+        target_url = "/api/polls/question/%s/results/"
+        target_url = target_url % question_instance.id
+        token = self.login(enquirer_user.username, enquirer_plain_password)
+        response = self.get(target_url, token, expected_response_status=200)
+        response_data = response.data
+        self.assertEqual(expected_data, response_data)
+
+    def tests_get_question_answers_no_answers(self):
+        """
+        Get Answers for a question nobody answer
+        """
+        user, user_password = create_basic_user()
+        question_instance = create_question(
+            question_text="Some question", days=30, created_by=user
+        )
+        expected_data = []
+        target_url = "/api/polls/question/%s/results/"
+        target_url = target_url % question_instance.id
+        token = self.login(user.username, user_password)
+        response = self.get(target_url, token, expected_response_status=200)
+        response_data = response.data
+        self.assertEqual(expected_data, response_data)
+
+    def tests_get_question_answers_non_enquirer_request(self):
+        """
+        Get Answers for a question that the requester did not create
+        """
+        enquirer_plain_password = "1234"
+        enquirer_user_data = {
+            "username": "morpheus",
+            "password": enquirer_plain_password,
+            "email": "morpheus@matrix.com",
+            "first_name": "Morpheus",
+            "last_name": "Unknown",
+        }
+        enquirer_user = User.create_user(**enquirer_user_data)
+        question_instance = create_question(
+            question_text="Do you want to know what is the Matrix?",
+            days=30,
+            created_by=enquirer_user,
+        )
+        user, user_password = create_basic_user()
+        target_url = "/api/polls/question/%s/results/"
+        target_url = target_url % question_instance.id
+        token = self.login(user.username, user_password)
+        response = self.get(target_url, token, expected_response_status=403)
+        expected_error = "Only the creator of a question can obtain its answers"
+        response_error = response.data
+        self.assertEqual(expected_error, response_error)
+
+    def tests_get_question_answers_nonexistent_question(self):
+        """
+        Get Answers for a question that it doesn't exist
+        """
+        user, user_password = create_basic_user()
+        question_instance = create_question(
+            question_text="Some question", days=30, created_by=user
+        )
+        nonexistent_id = question_instance.id + 1
+        target_url = "/api/polls/question/%s/results/"
+        target_url = target_url % nonexistent_id
+        token = self.login(user.username, user_password)
+        response = self.get(target_url, token, expected_response_status=404)
+        expected_error = {"detail": ErrorDetail(string="Not found.", code="not_found")}
+        response_error = response.data
         self.assertEqual(expected_error, response_error)
 
 

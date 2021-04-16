@@ -2,7 +2,8 @@
 from rest_framework import viewsets, status
 from rest_framework.authtoken.models import Token
 from rest_framework.authtoken.views import ObtainAuthToken
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view
+from rest_framework.generics import get_object_or_404
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
@@ -14,8 +15,8 @@ from .serializers import (
     UserRetrieveSerializer,
     UserCreateSerializer,
     UserUpdateSerializer,
-    VoteSerializer,
     AnswerResultListSerializer,
+    VoteSerializer,
 )
 
 
@@ -44,20 +45,24 @@ class QuestionViewSet(viewsets.ModelViewSet):
         if serializer.is_valid():
             serializer.create(serializer.validated_data)
         else:
-            if serializer.errors["non_field_errors"]:
+            if serializer.errors.get("non_field_errors"):
                 return Response(serializer.errors, status=status.HTTP_409_CONFLICT)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         return Response(status=status.HTTP_201_CREATED)
 
-    @action(detail=True, methods=["get"])
-    def results(self, request, pk=None):
-        user = request.user
-        question = self.get_object()
-        answers = Answer.objects.filter(
-            question__created_by=user.id, question=question.id
+
+@api_view(["GET"])
+def get_question_answers(request, question_id):
+    user = request.user
+    question = get_object_or_404(Question, pk=question_id)
+    if user.id != question.created_by.id:
+        return Response(
+            "Only the creator of a question can obtain its answers",
+            status=status.HTTP_403_FORBIDDEN,
         )
-        serializer = AnswerResultListSerializer(answers, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+    answers = Answer.objects.filter(question__created_by=user.id, question=question.id)
+    serializer = AnswerResultListSerializer(answers, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class ChoiceViewSet(viewsets.ModelViewSet):
