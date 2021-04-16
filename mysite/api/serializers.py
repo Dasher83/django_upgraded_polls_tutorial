@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from polls.models import Question, Choice, User
+from polls.models import Question, Choice, User, Answer
 
 
 class QuestionSerializer(serializers.ModelSerializer):
@@ -15,6 +15,33 @@ class ChoiceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Choice
         fields = "__all__"
+
+
+class VoteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Answer
+        exclude = ["id"]
+
+
+class UserAnswerResultSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ("id", "username")
+
+
+class ChoiceAnswerResultSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Choice
+        fields = ("id", "choice_text")
+
+
+class AnswerResultListSerializer(serializers.ModelSerializer):
+    choice = ChoiceAnswerResultSerializer()
+    user = UserAnswerResultSerializer()
+
+    class Meta:
+        model = Answer
+        fields = ["user", "choice"]
 
 
 class UserRetrieveSerializer(serializers.ModelSerializer):
