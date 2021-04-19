@@ -70,7 +70,7 @@ class Choice(models.Model):
         return self.choice_text
 
     def get_votes(self):
-        raise NotImplementedError
+        return Answer.objects.filter(choice=self).count()
 
 
 class Answer(models.Model):
@@ -79,7 +79,7 @@ class Answer(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
 
     class Meta:
-        unique_together = ("question", "choice", "user")
+        unique_together = ("question", "user")
 
     def __str__(self):
         representation = "Answer connects -> Question: %s. Choice: %s. User: %s."
