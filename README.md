@@ -10,4 +10,5 @@ This project uses pipenv for package management.
     - Permission per Model restrictions
     - Endpoints for Admins only
     - Fix admin page to work with Answer model
-  
+    - Enforce a minimum of two choices associated to every Question during creation and update.
+    - Making a nice frontend further down the road

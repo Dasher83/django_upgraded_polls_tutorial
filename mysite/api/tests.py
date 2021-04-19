@@ -581,9 +581,7 @@ class QuestionVoteViewTests(ApiTestCase):
             target_url, token, data=vote_data, expected_response_status=409
         )
         expected_error = {
-            "non_field_errors": [
-                "The fields question, choice, user must make a unique set."
-            ]
+            "non_field_errors": ["The fields question, user must make a unique set."]
         }
         response_error = response.data
         self.assertEqual(expected_error, response_error)
