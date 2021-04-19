@@ -1,11 +1,12 @@
 import datetime
 
 from django.urls import reverse
-from django.utils import timezone
+from django.utils import timezone, html
 from django.test import TestCase
 
+from api.tests import create_choice
 from mysite.testing_utils import create_basic_user
-from .models import Question
+from .models import Question, Answer
 
 
 def create_question(question_text, days, created_by):
@@ -96,7 +97,7 @@ class QuestionDetailViewTests(TestCase):
     def test_past_question(self):
         """
         The detail view of a question with a pub_date
-        in the past displays the quetion's text.
+        in the past displays the question's text.
         """
         user = create_basic_user(return_plain_password=False)
         past_question = create_question(
@@ -105,6 +106,88 @@ class QuestionDetailViewTests(TestCase):
         url = reverse("polls:detail", args=(past_question.id,))
         response = self.client.get(url)
         self.assertContains(response, past_question.question_text)
+
+
+class QuestionVoteViewTests(TestCase):
+    def test_vote_successfully(self):
+        """
+        Submit an Answer successfully.
+        """
+        user, user_password = create_basic_user()
+        question = create_question(
+            question_text="Some question.", days=5, created_by=user
+        )
+        choice = create_choice(choice_text="Some choice", question=question)
+        url = reverse("polls:vote", args=(question.id,))
+        data = {"choice": choice.id}
+        self.client.force_login(user)
+        response = self.client.post(url, data=data)
+        self.assertEqual(response.status_code, 302)
+
+    def test_vote_no_choice_selected(self):
+        """
+        Fail to submit an answer because no choice was selected
+        """
+        user, user_password = create_basic_user()
+        question = create_question(
+            question_text="Some question.", days=5, created_by=user
+        )
+        create_choice(choice_text="Some choice", question=question)
+        url = reverse("polls:vote", args=(question.id,))
+        data = {}
+        self.client.force_login(user)
+        response = self.client.post(url, data=data)
+        self.assertContains(response, html.escape("You didn't select a choice."))
+
+    def test_vote_anonymously(self):
+        """
+        Fail to submit an Answer because no authenticated user did so.
+        """
+        user, user_password = create_basic_user()
+        question = create_question(
+            question_text="Some question.", days=5, created_by=user
+        )
+        choice = create_choice(choice_text="Some choice", question=question)
+        url = reverse("polls:vote", args=(question.id,))
+        data = {"choice": choice.id}
+        response = self.client.post(url, data=data)
+        self.assertContains(response, "Answers cannot be anonymous.")
+
+    def test_vote_already_voted(self):
+        """
+        Fail to submit an Answer because the given user already answered that question.
+        """
+        user, user_password = create_basic_user()
+        question = create_question(
+            question_text="Some question.", days=5, created_by=user
+        )
+        choice = create_choice(choice_text="Some choice", question=question)
+        answer = Answer(question=question, choice=choice, user=user)
+        answer.save()
+        url = reverse("polls:vote", args=(question.id,))
+        data = {"choice": choice.id}
+        self.client.force_login(user)
+        response = self.client.post(url, data=data)
+        self.assertContains(response, "You already answered this question.")
+
+
+class ResultsViewTests(TestCase):
+    def test_get_results_successfully(self):
+        """
+        Get results without errors
+        """
+        user, user_password = create_basic_user()
+        question = create_question(
+            question_text="Some question", days=5, created_by=user
+        )
+        first_choice = create_choice(choice_text="The first choice", question=question)
+        create_choice(choice_text="The second choice", question=question)
+        answer = Answer(question=question, choice=first_choice, user=user)
+        answer.save()
+        url = reverse("polls:results", args=(question.id,))
+        response = self.client.get(url)
+        self.assertContains(response, "The first choice -- 1 vote")
+        self.assertContains(response, "The second choice -- 0 votes")
 
 
 class QuestionModelsTests(TestCase):
